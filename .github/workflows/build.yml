@@ -77,6 +77,11 @@ jobs:
             archive: zip
     steps:
       - uses: actions/checkout@master
+      - name: Install Rust
+        run: rustup toolchain install stable --component llvm-tools-preview
+      - name: Install cargo-llvm-cov
+        uses: taiki-e/install-action@cargo-llvm-cov
+      - uses: Swatinem/rust-cache@v2
       - name: Compile and release
         uses: rust-build/rust-build.action@v1.4.5
         env:

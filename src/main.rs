@@ -12,8 +12,6 @@ mod openai_rs;
 
 #[tokio::main]
 async fn main() -> Result<()> {
-    dotenv().ok();
-
     let cli = Cli::parse();
 
     match &cli.config {

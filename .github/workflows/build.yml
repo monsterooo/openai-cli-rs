@@ -113,7 +113,6 @@ on:
 
 jobs:
   upload-assets:
-    needs: create-release
     strategy:
       matrix:
         include:

@@ -10,10 +10,18 @@ permissions:
 
 jobs:
   build-rust:
+    name: release ${{ matrix.target }}
+    runs-on: ubuntu-latest
     strategy:
+      fail-fast: false
       matrix:
-        platform: [ubuntu-latest]
-    runs-on: ${{ matrix.platform }}
+        include:
+          - target: x86_64-pc-windows-gnu
+            archive: zip
+          - target: x86_64-unknown-linux-musl
+            archive: tar.gz tar.xz tar.zst
+          - target: x86_64-apple-darwin
+            archive: zip
     steps:
       - uses: actions/checkout@v4
         with:
@@ -55,9 +63,9 @@ jobs:
 #     tags:
 #       - v[0-9]+.*
 
-# # on:
-# #   release:
-# #     types: [created]
+# on:
+#   release:
+#     types: [created]
 
 #   # 允许用于在 `Actions` 标签页中手动运行工作流
 #   workflow_dispatch:

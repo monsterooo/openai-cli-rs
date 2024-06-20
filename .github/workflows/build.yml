@@ -110,6 +110,7 @@ on:
   push:
     branches:
       - master
+
 jobs:
   upload-assets:
     needs: create-release

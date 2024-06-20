@@ -5,7 +5,6 @@ use crate::openai_rs::Client;
 pub fn get_client() -> Client {
     let config = Config::load();
 
-    println!("{:?}", config);
     if config.openai_api_key.is_empty() {
         panic!("Please set openai_key first")
     }

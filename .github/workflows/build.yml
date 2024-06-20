@@ -1,51 +1,52 @@
-# name: build
+name: build
 
-# on:
-#   release:
-#     types: [created]
-# permissions:
-#   contents: write
+on:
+  push:
+    tags:
+      - v*
+permissions:
+  contents: write
 
-# jobs:
-#   build-rust:
-#     name: release ${{ matrix.target }}
-#     runs-on: ubuntu-latest
-#     strategy:
-#       fail-fast: false
-#       matrix:
-#         include:
-#           - target: x86_64-pc-windows-gnu
-#             archive: zip
-#           - target: x86_64-unknown-linux-musl
-#             archive: tar.gz tar.xz tar.zst
-#           - target: x86_64-apple-darwin
-#             archive: zip
-#     steps:
-#       - uses: actions/checkout@v4
-#         with:
-#           fetch-depth: 0
-#           submodules: recursive
-#       - name: Install Rust
-#         run: rustup toolchain install stable --component llvm-tools-preview
-#       - name: Install cargo-llvm-cov
-#         uses: taiki-e/install-action@cargo-llvm-cov
-#       - uses: Swatinem/rust-cache@v2
-#       - name: Generate a changelog
-#         uses: orhun/git-cliff-action@v2
-#         id: git-cliff
-#         if: startsWith(github.ref, 'refs/tags/')
-#         with:
-#           config: cliff.toml
-#           args: -vv --latest --strip header
-#         env:
-#           OUTPUT: CHANGES.md
-#       - name: Upload artifact
-#         uses: actions/upload-artifact@v3
-#         with:
-#           name: Binary
-#           path: |
-#             ${{ steps.compile.outputs.BUILT_ARCHIVE }}
-#             ${{ steps.compile.outputs.BUILT_CHECKSUM }}
+jobs:
+  build-rust:
+    name: release ${{ matrix.target }}
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - target: x86_64-pc-windows-gnu
+            archive: zip
+          - target: x86_64-unknown-linux-musl
+            archive: tar.gz tar.xz tar.zst
+          - target: x86_64-apple-darwin
+            archive: zip
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          submodules: recursive
+      - name: Install Rust
+        run: rustup toolchain install stable --component llvm-tools-preview
+      - name: Install cargo-llvm-cov
+        uses: taiki-e/install-action@cargo-llvm-cov
+      - uses: Swatinem/rust-cache@v2
+      - name: Generate a changelog
+        uses: orhun/git-cliff-action@v2
+        id: git-cliff
+        if: startsWith(github.ref, 'refs/tags/')
+        with:
+          config: cliff.toml
+          args: -vv --latest --strip header
+        env:
+          OUTPUT: CHANGES.md
+      - name: Upload artifact
+        uses: actions/upload-artifact@v3
+        with:
+          name: Binary
+          path: |
+            ${{ steps.compile.outputs.BUILT_ARCHIVE }}
+            ${{ steps.compile.outputs.BUILT_CHECKSUM }}
 
 # # 下面是一个基础的工作流，你可以基于它来编写自己的 GitHub Actions
 # name: Build
@@ -100,48 +101,3 @@
 #           path: |
 #             ${{ steps.compile.outputs.BUILT_ARCHIVE }}
 #             ${{ steps.compile.outputs.BUILT_CHECKSUM }}
-
-name: Release
-
-permissions:
-  contents: write
-
-on:
-  push:
-    tags: ["v[0-9]+.*"]
-
-jobs:
-  upload-assets:
-    strategy:
-      matrix:
-        include:
-          - target: x86_64-unknown-linux-gnu
-            os: ubuntu-latest
-          - target: x86_64-apple-darwin
-            os: macos-latest
-          - target: x86_64-pc-windows-msvc
-            os: windows-latest
-    runs-on: ${{ matrix.os }}
-    steps:
-      - uses: actions/checkout@v4
-      - uses: taiki-e/upload-rust-binary-action@v1
-        with:
-          # (required) Comma-separated list of binary names (non-extension portion of filename) to build and upload.
-          # Note that glob pattern is not supported yet.
-          bin: openai-cli-rs
-          # (optional) Target triple, default is host triple.
-          # This is optional but it is recommended that this always be set to
-          # clarify which target you are building for if macOS is included in
-          # the matrix because GitHub Actions changed the default architecture
-          # of macos-latest since macos-14.
-          target: ${{ matrix.target }}
-          # (optional) On which platform to distribute the `.tar.gz` file.
-          # [default value: unix]
-          # [possible values: all, unix, windows, none]
-          tar: unix
-          # (optional) On which platform to distribute the `.zip` file.
-          # [default value: windows]
-          # [possible values: all, unix, windows, none]
-          zip: windows
-          # (required) GitHub token for uploading assets to GitHub Releases.
-          token: ${{ secrets.GITHUB_TOKEN }}

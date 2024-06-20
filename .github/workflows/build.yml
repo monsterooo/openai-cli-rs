@@ -48,19 +48,64 @@
 #             ${{ steps.compile.outputs.BUILT_CHECKSUM }}
 
 # 下面是一个基础的工作流，你可以基于它来编写自己的 GitHub Actions
+# name: Build
+
+# permissions:
+#   contents: write
+
+# on:
+#   release:
+#     types: [created]
+
+#   # 允许用于在 `Actions` 标签页中手动运行工作流
+#   workflow_dispatch:
+
+# # 工作流由一个或多个作业( job )组成，这些作业可以顺序运行也可以并行运行
+# jobs:
+#   release:
+#     name: release ${{ matrix.target }}
+#     runs-on: ubuntu-latest
+#     strategy:
+#       fail-fast: false
+#       matrix:
+#         include:
+#           - target: x86_64-pc-windows-gnu
+#             archive: zip
+#           - target: x86_64-unknown-linux-musl
+#             archive: tar.gz tar.xz tar.zst
+#           - target: x86_64-apple-darwin
+#             archive: zip
+#     steps:
+#       - uses: actions/checkout@master
+#       - name: Compile and release
+#         uses: rust-build/rust-build.action@v1.4.5
+#         env:
+#           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+#         with:
+#           RUSTTARGET: ${{ matrix.target }}
+#           ARCHIVE_TYPES: ${{ matrix.archive }}
+#       - name: Generate a changelog
+#         uses: orhun/git-cliff-action@v2
+#         id: git-cliff
+#         if: startsWith(github.ref, 'refs/tags/')
+#         with:
+#           config: cliff.toml
+#           args: -vv --latest --strip header
+#         env:
+#           OUTPUT: CHANGES.md
+#       - name: Upload artifact
+#         uses: actions/upload-artifact@v3
+#         with:
+#           name: Binary
+#           path: |
+#             ${{ steps.compile.outputs.BUILT_ARCHIVE }}
+#             ${{ steps.compile.outputs.BUILT_CHECKSUM }}
+
 name: Build
-
-permissions:
-  contents: write
-
 on:
   release:
     types: [created]
 
-  # 允许用于在 `Actions` 标签页中手动运行工作流
-  workflow_dispatch:
-
-# 工作流由一个或多个作业( job )组成，这些作业可以顺序运行也可以并行运行
 jobs:
   release:
     name: release ${{ matrix.target }}
@@ -69,11 +114,11 @@ jobs:
       fail-fast: false
       matrix:
         include:
-          - target: windows-latest
+          - target: x86_64-pc-windows-gnu
             archive: zip
-          - target: ubuntu-latest
+          - target: x86_64-unknown-linux-musl
             archive: tar.gz tar.xz tar.zst
-          - target: macos-latest
+          - target: x86_64-apple-darwin
             archive: zip
     steps:
       - uses: actions/checkout@master
@@ -84,19 +129,3 @@ jobs:
         with:
           RUSTTARGET: ${{ matrix.target }}
           ARCHIVE_TYPES: ${{ matrix.archive }}
-      - name: Generate a changelog
-        uses: orhun/git-cliff-action@v2
-        id: git-cliff
-        if: startsWith(github.ref, 'refs/tags/')
-        with:
-          config: cliff.toml
-          args: -vv --latest --strip header
-        env:
-          OUTPUT: CHANGES.md
-      - name: Upload artifact
-        uses: actions/upload-artifact@v3
-        with:
-          name: Binary
-          path: |
-            ${{ steps.compile.outputs.BUILT_ARCHIVE }}
-            ${{ steps.compile.outputs.BUILT_CHECKSUM }}

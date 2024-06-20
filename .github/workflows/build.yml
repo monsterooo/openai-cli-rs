@@ -24,24 +24,25 @@ on:
 
 # 工作流由一个或多个作业( job )组成，这些作业可以顺序运行也可以并行运行
 jobs:
-  # 当前的工作流仅包含一个作业，作业 id 是 "build"
-  build:
-    # 作业名称
-    name: build rust action
-    # 执行作业所需的运行器 runner
+  release:
+    name: release ${{ matrix.target }}
     runs-on: ubuntu-latest
-
-    # steps 代表了作业中包含的一系列可被执行的任务
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - target: x86_64-pc-windows-gnu
+            archive: zip
+          - target: x86_64-unknown-linux-musl
+            archive: tar.gz tar.xz tar.zst
+          - target: x86_64-apple-darwin
+            archive: zip
     steps:
-      # 在 $GITHUB_WORKSPACE 下 checks-out 当前仓库，这样当前作业就可以访问该仓库
-      - uses: actions/checkout@v4
-
-      # 使用运行器的终端来运行一个命令
-      - name: Run a one-line script
-        run: echo Hello, world!
-
-      # 使用运行器的终端运行一组命令
-      - name: Run a multi-line script
-        run: |
-          echo Add other actions to build,
-          echo test, and deploy your project.
+      - uses: actions/checkout@master
+      - name: Compile and release
+        uses: rust-build/rust-build.action@v1.4.5
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        with:
+          RUSTTARGET: ${{ matrix.target }}
+          ARCHIVE_TYPES: ${{ matrix.archive }}

@@ -84,6 +84,13 @@ jobs:
         with:
           RUSTTARGET: ${{ matrix.target }}
           ARCHIVE_TYPES: ${{ matrix.archive }}
+      - name: Upload artifact
+        uses: actions/upload-artifact@v3
+        with:
+          name: Binary
+          path: |
+            ${{ steps.compile.outputs.BUILT_ARCHIVE }}
+            ${{ steps.compile.outputs.BUILT_CHECKSUM }}
       - name: Generate a changelog
         uses: orhun/git-cliff-action@v2
         id: git-cliff
@@ -93,10 +100,3 @@ jobs:
           args: -vv --latest --strip header
         env:
           OUTPUT: CHANGES.md
-      - name: Upload artifact
-        uses: actions/upload-artifact@v3
-        with:
-          name: Binary
-          path: |
-            ${{ steps.compile.outputs.BUILT_ARCHIVE }}
-            ${{ steps.compile.outputs.BUILT_CHECKSUM }}

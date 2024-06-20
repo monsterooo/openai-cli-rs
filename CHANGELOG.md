@@ -3,11 +3,19 @@
 All notable changes to this project will be documented in this file. See [conventional commits](https://www.conventionalcommits.org/) for commit guidelines.
 
 ---
+## [0.0.4](https://github.com/monsterooo/openai-cli-rs/compare/v0.0.3..v0.0.4) - 2024-06-20
+
+### Other
+
+- Update actions bin - ([44f6b56](https://github.com/monsterooo/openai-cli-rs/commit/44f6b564f1d6f3132920e76ff8927019fcfa95bd)) - monsterooo
+
+---
 ## [0.0.3](https://github.com/monsterooo/openai-cli-rs/compare/v0.0.2..v0.0.3) - 2024-06-20
 
 ### Other
 
 - add changelog - ([2815c86](https://github.com/monsterooo/openai-cli-rs/commit/2815c86d5f320ae7835372081d728bd7e4538c60)) - monsterooo
+- Update changelog - ([4d9cce5](https://github.com/monsterooo/openai-cli-rs/commit/4d9cce59ecb0bcf970998c7e25fa9f864a40f1fe)) - monsterooo
 
 ---
 ## [0.0.2](https://github.com/monsterooo/openai-cli-rs/compare/v0.0.1..v0.0.2) - 2024-06-20

@@ -47,20 +47,20 @@
 #             ${{ steps.compile.outputs.BUILT_ARCHIVE }}
 #             ${{ steps.compile.outputs.BUILT_CHECKSUM }}
 
-# 下面是一个基础的工作流，你可以基于它来编写自己的 GitHub Actions
-name: Build
+# # 下面是一个基础的工作流，你可以基于它来编写自己的 GitHub Actions
+# name: Build
 
-permissions:
-  contents: write
+# permissions:
+#   contents: write
 
-on:
-  release:
-    types: [created]
+# on:
+#   release:
+#     types: [created]
 
-  # 允许用于在 `Actions` 标签页中手动运行工作流
-  workflow_dispatch:
+#   # 允许用于在 `Actions` 标签页中手动运行工作流
+#   workflow_dispatch:
 
-# 工作流由一个或多个作业( job )组成，这些作业可以顺序运行也可以并行运行
+# # 工作流由一个或多个作业( job )组成，这些作业可以顺序运行也可以并行运行
 # jobs:
 #   release:
 #     name: release ${{ matrix.target }}
@@ -106,105 +106,214 @@ on:
 #             ${{ steps.compile.outputs.BUILT_ARCHIVE }}
 #             ${{ steps.compile.outputs.BUILT_CHECKSUM }}
 
+
+
+# The way this works is a little weird. But basically, the create-release job
+# runs purely to initialize the GitHub release itself. Once done, the upload
+# URL of the release is saved as an artifact.
+#
+# The build-release job runs only once create-release is finished. It gets
+# the release upload URL by downloading the corresponding artifact (which was
+# uploaded by create-release). It then builds the release executables for each
+# supported platform and attaches them as release assets to the previously
+# created release.
+#
+# The key here is that we create the release only once.
+
+name: release
+on:
+  push:
+    # Enable when testing release infrastructure on a branch.
+    # branches:
+    # - ag/release
+    tags:
+      - "v[0-9]+.[0-9]+.[0-9]+"
 jobs:
-  release:
-    name: Release - ${{ matrix.platform.os_name }}
-    if: startsWith( github.ref, 'refs/tags/v' ) || github.ref == 'refs/tags/test-release'
+  create-release:
+    name: create-release
+    runs-on: ubuntu-latest
+    # env:
+    # Set to force version number, e.g., when no tag exists.
+    # ARTIFACT_VERSION: TEST-0.0.0
+    steps:
+      - name: Create artifacts directory
+        run: mkdir artifacts
+
+      - name: Get the release version from the tag
+        if: env.ARTIFACT_VERSION == ''
+        run: |
+          echo "ARTIFACT_VERSION=${GITHUB_REF#refs/tags/}" >> $GITHUB_ENV
+          echo "version is: ${{ env.ARTIFACT_VERSION }}"
+
+      - name: Create GitHub release
+        id: release
+        uses: ncipollo/release-action@v1
+        with:
+          tag: ${{ env.ARTIFACT_VERSION }}
+          name: ${{ env.ARTIFACT_VERSION }}
+          allowUpdates: true
+          omitBody: true
+          omitPrereleaseDuringUpdate: true
+          token: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Save release upload URL to artifact
+        run: echo "${{ steps.release.outputs.upload_url }}" > artifacts/release-upload-url
+
+      - name: Save version number to artifact
+        run: echo "${{ env.ARTIFACT_VERSION }}" > artifacts/release-version
+
+      - name: Upload artifacts
+        uses: actions/upload-artifact@v1
+        with:
+          name: artifacts
+          path: artifacts
+
+  build-release:
+    name: build-release
+    needs: ["create-release"]
+    runs-on: ${{ matrix.os }}
+    env:
+      # For some builds, we use cross to test on 32-bit and big-endian
+      # systems.
+      CARGO: cargo
+      # When CARGO is set to CROSS, this is set to `--target matrix.target`.
+      TARGET_FLAGS:
+      # When CARGO is set to CROSS, TARGET_DIR includes matrix.target.
+      TARGET_DIR: ./target
+      # Emit backtraces on panics.
+      RUST_BACKTRACE: 1
+      # The name of the executable to expect
+      EXE_NAME: dua
     strategy:
       matrix:
-        platform:
-          - os_name: FreeBSD-x86_64
-            os: ubuntu-20.04
-            target: x86_64-unknown-freebsd
-            bin: ubi
-            name: ubi-FreeBSD-x86_64.tar.gz
-            cross: true
-            cargo_command: ./cross
-
-          - os_name: Linux-x86_64
-            os: ubuntu-20.04
+        build: [linux, linux-arm, linux-arm64, macos, win-msvc, win32-msvc]
+        include:
+          - build: linux
+            os: ubuntu-latest
+            rust: stable
             target: x86_64-unknown-linux-musl
-            bin: ubi
-            name: ubi-Linux-x86_64-musl.tar.gz
-            cross: false
-            cargo_command: cargo
-
-          - os_name: Windows-aarch64
-            os: windows-latest
-            target: aarch64-pc-windows-msvc
-            bin: ubi.exe
-            name: ubi-Windows-aarch64.zip
-            cross: false
-            cargo_command: cargo
-
-          - os_name: macOS-x86_64
-            os: macOS-latest
+          - build: linux-arm
+            os: ubuntu-latest
+            rust: nightly
+            target: arm-unknown-linux-gnueabihf
+          - build: linux-arm64
+            os: ubuntu-latest
+            rust: stable
+            target: aarch64-unknown-linux-musl
+          - build: macos
+            os: macos-latest
+            rust: stable
             target: x86_64-apple-darwin
-            bin: ubi
-            name: ubi-Darwin-x86_64.tar.gz
-            cross: false
-            cargo_command: cargo
+          - build: win-msvc
+            os: windows-2019
+            rust: nightly
+            target: x86_64-pc-windows-msvc
+          - build: win32-msvc
+            os: windows-2019
+            rust: nightly
+            target: i686-pc-windows-msvc
 
-    runs-on: ${{ matrix.platform.os }}
     steps:
-      - name: Checkout
-        uses: actions/checkout@v3
-      - name: Install toolchain if not cross-compiling
-        uses: dtolnay/rust-toolchain@stable
+      - name: Checkout repository
+        uses: actions/checkout@v2
         with:
-          targets: ${{ matrix.platform.target }}
-        if: ${{ !matrix.platform.cross }}
-      - name: Install musl-tools on Linux
-        run: sudo apt-get update --yes && sudo apt-get install --yes musl-tools
-        if: contains(matrix.platform.os, 'ubuntu') && !matrix.platform.cross
-      - name: Install cross if cross-compiling (*nix)
-        id: cross-nix
+          fetch-depth: 1
+
+      - name: Install packages (Ubuntu)
+        if: matrix.os == 'ubuntu-latest'
+        run: |
+          ci/ubuntu-install-packages
+
+      - name: Install packages (macOS)
+        if: matrix.os == 'macos-latest'
+        run: |
+          ci/macos-install-packages
+
+      - name: Install Rust
+        uses: actions-rs/toolchain@v1
+        with:
+          toolchain: ${{ matrix.rust }}
+          profile: minimal
+          override: true
+          target: ${{ matrix.target }}
+
+      - name: Use Cross
+        # if: matrix.os != 'windows-2019'
+        run: |
+          cargo install cross
+          echo "CARGO=cross" >> $GITHUB_ENV
+          echo "TARGET_FLAGS=--target ${{ matrix.target }}" >> $GITHUB_ENV
+          echo "TARGET_DIR=./target/${{ matrix.target }}" >> $GITHUB_ENV
+
+      - name: Show command used for Cargo
+        run: |
+          echo "cargo command is: ${{ env.CARGO }}"
+          echo "target flag is: ${{ env.TARGET_FLAGS }}"
+          echo "target dir is: ${{ env.TARGET_DIR }}"
+
+      - name: Get release download URL
+        uses: actions/download-artifact@v1
+        with:
+          name: artifacts
+          path: artifacts
+
+      - name: Set release upload URL and release version
         shell: bash
         run: |
-          set -e
-          export TARGET="$HOME/bin"
-          mkdir -p "$TARGET"
-          ./bootstrap/bootstrap-ubi.sh
-          "$HOME/bin/ubi" --project cross-rs/cross --matching musl --in .
-        if: matrix.platform.cross && !contains(matrix.platform.os, 'windows')
-      - name: Install cross if cross-compiling (Windows)
-        id: cross-windows
-        shell: powershell
+          release_upload_url="$(cat artifacts/release-upload-url)"
+          echo "RELEASE_UPLOAD_URL=$release_upload_url" >> $GITHUB_ENV
+          echo "release upload url: $RELEASE_UPLOAD_URL"
+          release_version="$(cat artifacts/release-version)"
+          echo "RELEASE_VERSION=$release_version" >> $GITHUB_ENV
+          echo "release version: $RELEASE_VERSION"
+
+      - name: Build release binary
+        run: ${{ env.CARGO }} build --verbose --release ${{ env.TARGET_FLAGS }}
+
+      - name: Strip release binary (linux and macos)
+        if: matrix.build == 'linux' || matrix.build == 'macos'
+        run: strip "target/${{ matrix.target }}/release/${{ env.EXE_NAME }}"
+      - name: Strip release binary (arm)
+        if: matrix.build == 'linux-arm'
         run: |
-          .\bootstrap\bootstrap-ubi.ps1
-          .\ubi --project cross-rs/cross --in .
-        if: matrix.platform.cross && contains(matrix.platform.os, 'windows')
-      - name: Build binary (*nix)
+          docker run --rm -v \
+            "$PWD/target:/target:Z" \
+            rustembedded/cross:arm-unknown-linux-gnueabihf \
+            arm-linux-gnueabihf-strip \
+            /target/arm-unknown-linux-gnueabihf/release/${{ env.EXE_NAME }}
+      - name: Strip release binary (arm64)
+        if: matrix.build == 'linux-arm64'
+        run: |
+          docker run --rm -v \
+            "$PWD/target:/target:Z" \
+            messense/rust-musl-cross:aarch64-musl \
+            musl-strip \
+            /target/aarch64-unknown-linux-musl/release/${{ env.EXE_NAME }}
+      - name: Build archive
         shell: bash
         run: |
-          ${{ matrix.platform.cargo_command }} build --locked --release --target ${{ matrix.platform.target }}
-        if: ${{ !contains(matrix.platform.os, 'windows') }}
-      - name: Build binary (Windows)
-        # We have to use the platform's native shell. If we use bash on
-        # Windows then OpenSSL complains that the Perl it finds doesn't use
-        # the platform's native paths and refuses to build.
-        shell: powershell
-        run: |
-          & ${{ matrix.platform.cargo_command }} build --locked --release --target ${{ matrix.platform.target }}
-        if: contains(matrix.platform.os, 'windows')
-      - name: Strip binary
-        shell: bash
-        run: |
-          strip target/${{ matrix.platform.target }}/release/${{ matrix.platform.bin }}
-        # strip doesn't work with cross-arch binaries on Linux or Windows.
-        if: ${{ !(matrix.platform.cross || matrix.platform.target == 'aarch64-pc-windows-msvc') }}
-      - name: Package as archive
-        shell: bash
-        run: |
-          cd target/${{ matrix.platform.target }}/release
-          if [[ "${{ matrix.platform.os }}" == "windows-latest" ]]; then
-            7z a ../../../${{ matrix.platform.name }} ${{ matrix.platform.bin }}
+          staging="${{ env.EXE_NAME }}-${{ env.RELEASE_VERSION }}-${{ matrix.target }}"
+          mkdir -p "$staging"/complete
+
+          cp {README.md,LICENSE,CHANGELOG.md} "$staging/"
+
+          if [ "${{ matrix.os }}" = "windows-2019" ]; then
+            # cp "target/${{ matrix.target }}/release/${{ env.EXE_NAME }}.exe" "$staging/"
+            cp "target/release/${{ env.EXE_NAME }}.exe" "$staging/"
+            7z a "$staging.zip" "$staging"
+            echo "ASSET=$staging.zip" >> $GITHUB_ENV
           else
-            tar czvf ../../../${{ matrix.platform.name }} ${{ matrix.platform.bin }}
+            cp "target/${{ matrix.target }}/release/${{ env.EXE_NAME }}" "$staging/"
+            tar czf "$staging.tar.gz" "$staging"
+            echo "ASSET=$staging.tar.gz" >> $GITHUB_ENV
           fi
-          cd -
-      - name: Publish release artifacts
-        uses: actions/upload-artifact@v3
+
+      - name: Upload release archive
+        uses: actions/upload-release-asset@v1.0.1
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         with:
-          name: ubi-${{ matrix.platform.os_name }}
-          path: "ubi*"
+          upload_url: ${{ env.RELEASE_UPLOAD_URL }}
+          asset_path: ${{ env.ASSET }}
+          asset_name: ${{ env.ASSET }}
+          asset_content_type: application/octet-stream

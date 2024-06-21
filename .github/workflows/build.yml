@@ -107,84 +107,172 @@
 #             ${{ steps.compile.outputs.BUILT_CHECKSUM }}
 
 
-name: Deploy
+# name: Deploy
+
+# on:
+#   push:
+#     tags:
+#       - v*
+
+# permissions:
+#   contents: write
+
+# jobs:
+#   build-and-upload:
+#     name: Build and upload
+#     runs-on: ${{ matrix.os }}
+
+#     strategy:
+#       matrix:
+#         # You can add more, for any target you'd like!
+#         include:
+#           - build: linux
+#             os: ubuntu-latest
+#             target: x86_64-unknown-linux-musl
+
+#           - build: macos
+#             os: macos-latest
+#             target: x86_64-apple-darwin
+
+#           - build: windows-gnu
+#             os: windows-latest
+#             target: x86_64-pc-windows-gnu
+
+#     steps:
+#       - name: Checkout
+#         uses: actions/checkout@v3
+
+#       - name: Get the release version from the tag
+#         shell: bash
+#         run: echo "VERSION=${GITHUB_REF#refs/tags/}" >> $GITHUB_ENV
+
+#       - name: Install Rust
+#         # Or @nightly if you want
+#         uses: dtolnay/rust-toolchain@stable
+#         # Arguments to pass in
+#         with:
+#           # Make Rust compile to our target (defined in the matrix)
+#           targets: ${{ matrix.target }}
+
+#       - name: Build
+#         uses: actions-rs/cargo@v1
+#         with:
+#           use-cross: true
+#           command: build
+#           args: --verbose --release --target ${{ matrix.target }}
+
+#       - name: Build archive
+#         shell: bash
+#         run: |
+#           # Replace with the name of your binary
+#           binary_name="openai-cli-rs"
+
+#           dirname="$binary_name-${{ env.VERSION }}-${{ matrix.target }}"
+#           mkdir "$dirname"
+#           if [ "${{ matrix.os }}" = "windows-latest" ]; then
+#             mv "target/${{ matrix.target }}/release/$binary_name.exe" "$dirname"
+#           else
+#             mv "target/${{ matrix.target }}/release/$binary_name" "$dirname"
+#           fi
+
+#           if [ "${{ matrix.os }}" = "windows-latest" ]; then
+#             7z a "$dirname.zip" "$dirname"
+#             echo "ASSET=$dirname.zip" >> $GITHUB_ENV
+#           else
+#             tar -czf "$dirname.tar.gz" "$dirname"
+#             echo "ASSET=$dirname.tar.gz" >> $GITHUB_ENV
+#           fi
+
+#       - name: Release
+#         uses: softprops/action-gh-release@v1
+#         with:
+#           files: |
+#             ${{ env.ASSET }}
+
+
+name: Publish
 
 on:
   push:
     tags:
-      - v*
-
-permissions:
-  contents: write
+      - "*"
 
 jobs:
-  build-and-upload:
-    name: Build and upload
+  publish:
+    name: Publish for ${{ matrix.os }}
     runs-on: ${{ matrix.os }}
-
     strategy:
       matrix:
-        # You can add more, for any target you'd like!
         include:
-          - build: linux
-            os: ubuntu-latest
-            target: x86_64-unknown-linux-musl
-
-          - build: macos
-            os: macos-latest
-            target: x86_64-apple-darwin
-
-          - build: windows-gnu
-            os: windows-latest
-            target: x86_64-pc-windows-gnu
+          - os: ubuntu-latest
+            artifact_name: crabz
+            asset_name: crabz-linux-amd64
+          - os: macos-latest
+            artifact_name: crabz
+            asset_name: crabz-macos-amd64
+          - os: windows-latest
+            artifact_name: crabz.exe
+            asset_name: crabz-windows-amd64.exe
 
     steps:
-      - name: Checkout
-        uses: actions/checkout@v3
-
-      - name: Get the release version from the tag
-        shell: bash
-        run: echo "VERSION=${GITHUB_REF#refs/tags/}" >> $GITHUB_ENV
-
-      - name: Install Rust
-        # Or @nightly if you want
-        uses: dtolnay/rust-toolchain@stable
-        # Arguments to pass in
-        with:
-          # Make Rust compile to our target (defined in the matrix)
-          targets: ${{ matrix.target }}
+      - uses: actions/checkout@v2
 
       - name: Build
-        uses: actions-rs/cargo@v1
-        with:
-          use-cross: true
-          command: build
-          args: --verbose --release --target ${{ matrix.target }}
+        shell: bash
+        run: |
+          cargo build --release --locked
 
       - name: Build archive
         shell: bash
         run: |
-          # Replace with the name of your binary
-          binary_name="openai-cli-rs"
+          staging="${{matrix.asset_name}}-src"
+          mkdir -p "$staging"
 
-          dirname="$binary_name-${{ env.VERSION }}-${{ matrix.target }}"
-          mkdir "$dirname"
-          if [ "${{ matrix.os }}" = "windows-latest" ]; then
-            mv "target/${{ matrix.target }}/release/$binary_name.exe" "$dirname"
-          else
-            mv "target/${{ matrix.target }}/release/$binary_name" "$dirname"
-          fi
+          cp {README.md,UNLICENSE,LICENSE-MIT} "$staging/"
+          cp {Cargo.toml,Cargo.lock} "$staging/"
+          cp -R ./src "./$staging/src"
 
           if [ "${{ matrix.os }}" = "windows-latest" ]; then
-            7z a "$dirname.zip" "$dirname"
-            echo "ASSET=$dirname.zip" >> $GITHUB_ENV
+            7z a "${staging}.zip" "$staging"
+            echo "ASSET=${staging}.zip" >> $GITHUB_ENV
           else
-            tar -czf "$dirname.tar.gz" "$dirname"
-            echo "ASSET=$dirname.tar.gz" >> $GITHUB_ENV
+            tar czf "${staging}.tar.gz" "${staging}"
+            echo "ASSET=${staging}.tar.gz" >> $GITHUB_ENV
           fi
 
-      - name: Release
-        uses: softprops/action-gh-release@v1
+      - name: Create deb artifact
+        shell: bash
+        run: |
+          if [ "${{ matrix.os }}" = "ubuntu-latest" ]; then
+            cd ..
+            cargo install --locked cargo-deb
+            cd -
+            asset_path="${{ matrix.asset_name }}.deb"
+            cargo deb --output ./"${asset_path}"
+            echo "DEB=${asset_path}" >> $GITHUB_ENV
+          fi
+
+      - name: Upload deb package
+        uses: svenstaro/upload-release-action@v2
+        if: matrix.os == 'ubuntu-latest'
         with:
-          files: |
-            ${{ env.ASSET }}
+          repo_token: ${{ secrets.GITHUB_TOKEN }}
+          file: ${{ env.DEB }}
+          asset_name: ${{ env.DEB }}
+          tag: ${{ github.ref }}
+
+      - name: Upload src to release
+        uses: svenstaro/upload-release-action@v2
+        with:
+          repo_token: ${{ secrets.GITHUB_TOKEN }}
+          file: ${{ env.ASSET }}
+          asset_name: ${{ env.ASSET }}
+          tag: ${{ github.ref }}
+
+      - name: Upload binaries to release
+        uses: svenstaro/upload-release-action@v2
+        with:
+          repo_token: ${{ secrets.GITHUB_TOKEN }}
+          file: target/release/${{ matrix.artifact_name }}
+          asset_name: ${{ matrix.asset_name }}
+          tag: ${{ github.ref }}
